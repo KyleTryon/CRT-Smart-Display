@@ -1,0 +1,241 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 theme customization */
+@theme {
+  --font-family-vt323: 'VT323', monospace;
+
+  --animate-flicker: flicker 0.15s infinite;
+  --animate-scanline: scanline 8s linear infinite;
+
+  /* Custom animation delays */
+  --animate-delay-0: 0ms;
+  --animate-delay-75: 75ms;
+  --animate-delay-150: 150ms;
+
+  /* Doubled font sizes for better CRT readability */
+  --fontSize-xs: 1.75rem; /* doubled from 0.875rem */
+  --fontSize-sm: 2rem; /* doubled from 1rem */
+  --fontSize-base: 2.25rem; /* doubled from 1.125rem */
+  --fontSize-lg: 2.5rem; /* doubled from 1.25rem */
+  --fontSize-xl: 3rem; /* doubled from 1.5rem */
+  --fontSize-2xl: 3.5rem; /* doubled from 1.75rem */
+  --fontSize-3xl: 4rem; /* doubled from 2rem */
+  --fontSize-4xl: 5rem; /* doubled from 2.5rem */
+  --fontSize-5xl: 6.5rem; /* doubled from 3.25rem */
+  --fontSize-6xl: 8rem; /* doubled from 4rem */
+  --fontSize-7xl: 10rem; /* doubled from 5rem */
+  --fontSize-8xl: 13rem; /* doubled from 6.5rem */
+  --fontSize-9xl: 17rem; /* doubled from 8.5rem */
+}
+
+/* CRT Theme Colors - Set dynamically by JavaScript ThemeManager */
+:root {
+  /* These CSS custom properties are set by the ThemeManager class */
+  /* Default fallback values (Classic Green) */
+  --crt-primary: 74, 222, 128;
+  --crt-primary-light: 34, 197, 94;
+  --crt-primary-dark: 22, 163, 74;
+  --crt-glow-primary: 0, 255, 0;
+  --crt-glow-light: rgba(0, 255, 0, 0.8);
+  --crt-glow-medium: rgba(0, 255, 0, 0.5);
+  --crt-glow-subtle: rgba(0, 255, 0, 0.3);
+  --crt-glow-faint: rgba(0, 255, 0, 0.1);
+  --crt-glow-very-faint: rgba(0, 255, 0, 0.02);
+  --crt-glow-ultra-faint: rgba(0, 255, 0, 0.01);
+  --crt-bg-dark: #0a1f0a;
+  --crt-bg-black: #000000;
+  --crt-bg-transparent-dark: rgba(0, 0, 0, 0.3);
+}
+
+@layer base {
+  body {
+    background-color: var(--crt-bg-black);
+    color: rgb(var(--crt-primary));
+    font-family: var(--font-family-vt323);
+    font-size: 1.25rem;
+    overflow: hidden;
+  }
+
+  /* Custom scrollbars for CRT theme */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--crt-primary)) var(--crt-bg-transparent-dark);
+  }
+
+  /* Webkit scrollbars (Chrome, Safari, Edge) */
+  *::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: var(--crt-bg-transparent-dark);
+    border-radius: 0;
+    box-shadow: inset 0 0 2px var(--crt-glow-faint);
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: rgb(var(--crt-primary));
+    border-radius: 0;
+    border: 1px solid var(--crt-glow-subtle);
+    box-shadow: 0 0 3px var(--crt-glow-medium);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--crt-primary-light));
+    box-shadow: 0 0 5px var(--crt-glow-light);
+  }
+
+  *::-webkit-scrollbar-thumb:active {
+    background: rgb(var(--crt-primary-dark));
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: var(--crt-bg-transparent-dark);
+  }
+
+  /* Custom scrollbar for horizontal scrolling */
+  *::-webkit-scrollbar:horizontal {
+    height: 12px;
+  }
+}
+
+/* CRT screen effect styles */
+@layer utilities {
+  .font-vt323 {
+    font-family: var(--font-family-vt323);
+  }
+
+  .animate-flicker {
+    animation: var(--animate-flicker);
+  }
+
+  .animate-scanline {
+    animation: var(--animate-scanline);
+  }
+
+  /* Override Tailwind font sizes with doubled values */
+  .text-xs {
+    font-size: 1.75rem !important;
+  }
+  .text-sm {
+    font-size: 2rem !important;
+  }
+  .text-base {
+    font-size: 2.25rem !important;
+  }
+  .text-lg {
+    font-size: 2.5rem !important;
+  }
+  .text-xl {
+    font-size: 3rem !important;
+  }
+  .text-2xl {
+    font-size: 3.5rem !important;
+  }
+  .text-3xl {
+    font-size: 4rem !important;
+  }
+  .text-4xl {
+    font-size: 5rem !important;
+  }
+  .text-5xl {
+    font-size: 6.5rem !important;
+  }
+  .text-6xl {
+    font-size: 8rem !important;
+  }
+  .text-7xl {
+    font-size: 10rem !important;
+  }
+  .text-8xl {
+    font-size: 13rem !important;
+  }
+  .text-9xl {
+    font-size: 17rem !important;
+  }
+
+  .crt-screen {
+    position: relative;
+    background: radial-gradient(ellipse at center, var(--crt-bg-dark) 0%, var(--crt-bg-black) 100%);
+    box-shadow: inset 0 0 120px var(--crt-glow-faint);
+  }
+
+  .crt-screen::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(to bottom, transparent 50%, var(--crt-glow-ultra-faint) 50%);
+    background-size: 100% 4px;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .crt-screen::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(to bottom, var(--crt-glow-very-faint), transparent);
+    animation: scanline 8s linear infinite;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .crt-flicker {
+    animation: flicker 0.15s infinite;
+  }
+
+  .crt-text-glow {
+    text-shadow: 0 0 5px var(--crt-glow-light);
+  }
+
+  .aspect-4-3 {
+    aspect-ratio: 4 / 3;
+  }
+
+  /* Kiosk mode container - maintains 4:3 aspect ratio while filling screen */
+  .crt-kiosk-container {
+    width: 100vw;
+    height: 100vh;
+    aspect-ratio: 4 / 3;
+    max-width: calc(100vh * 4 / 3); /* Width limited by height */
+    max-height: calc(100vw * 3 / 4); /* Height limited by width */
+  }
+
+  .delay-0 {
+    animation-delay: var(--animate-delay-0);
+  }
+
+  .delay-75 {
+    animation-delay: var(--animate-delay-75);
+  }
+
+  .delay-150 {
+    animation-delay: var(--animate-delay-150);
+  }
+}
+
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 0.97;
+  }
+  50% {
+    opacity: 1;
+  }
+}
