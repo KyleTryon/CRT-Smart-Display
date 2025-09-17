@@ -100,6 +100,36 @@ export const AIRCRAFT_CATEGORIES = {
   C5: 'Line Obstacle',
 } as const
 
+// Aircraft category constants for filtering
+export const AIRCRAFT_CATEGORY_GROUPS = {
+  COMMERCIAL: ['A3', 'A4', 'A5'], // Large, High Vortex Large, Heavy
+  HELICOPTERS: ['A7'], // Rotorcraft
+} as const
+
+// Display colors for different aircraft types
+export const AIRCRAFT_COLORS = {
+  DEFAULT: '#74de80', // Green
+  EMERGENCY: '#ef4444', // Red
+  MILITARY: '#f59e0b', // Amber
+  COMMERCIAL: '#06b6d4', // Cyan
+  OFF_SCREEN_INDICATOR: '#f59e0b', // Amber
+} as const
+
+// UI Configuration
+export const UI_CONFIG = {
+  CANVAS_MARGIN: 50,
+  REFERENCE_POINT_SIZE: 6,
+  ARROW_SIZE: 8,
+  PULSE_CYCLE: 2, // seconds
+  DEFAULT_ICON_SIZE: 16,
+  DEFAULT_TRAIL_OPACITY: 0.6,
+  DEFAULT_MAP_OPACITY: 0.3,
+  INTERPOLATION_DURATION: 4000, // milliseconds
+} as const
+
+// Reference point colors for debugging
+export const REFERENCE_POINT_COLORS = ['#eab308', '#ef4444', '#06b6d4', '#10b981'] as const
+
 // Emergency Codes
 export const EMERGENCY_CODES = {
   none: 'No Emergency',

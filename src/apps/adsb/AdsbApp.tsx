@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { adsbApi } from './lib/adsbSdk'
 import type { Aircraft, AircraftTrail } from './types/adsb'
 import {
@@ -7,8 +7,28 @@ import {
   latLonToPixel,
   ADSB_PHILADELPHIA_REFERENCE_POINTS,
   ADSB_MAP_BOUNDS,
+  AIRCRAFT_CATEGORY_GROUPS,
+  AIRCRAFT_COLORS,
+  UI_CONFIG,
+  REFERENCE_POINT_COLORS,
 } from './config'
 import StatsBar from './components/StatsBar'
+
+// Extract constants from config for cleaner code
+const {
+  CANVAS_MARGIN,
+  REFERENCE_POINT_SIZE,
+  ARROW_SIZE,
+  PULSE_CYCLE,
+  DEFAULT_ICON_SIZE,
+  DEFAULT_TRAIL_OPACITY,
+  DEFAULT_MAP_OPACITY,
+  INTERPOLATION_DURATION,
+} = UI_CONFIG
+
+// Type guards
+const isInterpolatedAircraft = (ac: Aircraft | InterpolatedAircraft): ac is InterpolatedAircraft => 
+  'interpolationProgress' in ac
 
 interface AdsbStats {
   totalAircraft: number
@@ -17,6 +37,15 @@ interface AdsbStats {
   military: number
   commercial: number
   helicopters: number
+}
+
+interface InterpolatedAircraft extends Aircraft {
+  // Previous position for interpolation
+  prevLat?: number
+  prevLon?: number
+  // Interpolation state
+  interpolationProgress?: number // 0 to 1
+  interpolationStartTime?: number
 }
 
 interface AdsbAppProps {
@@ -52,9 +81,10 @@ interface AdsbAppProps {
   // UI customization
   title?: string
   aircraftIconSize?: number
-  trailLength?: number
   trailOpacity?: number
   showOffScreenIndicators?: boolean
+  enableSmoothMotion?: boolean
+  interpolationDuration?: number // milliseconds
   
   // Callbacks
   onAircraftUpdate?: (aircraft: Aircraft[]) => void
@@ -67,7 +97,7 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
   refreshInterval = ADSB_CONFIG.REFRESH_INTERVAL,
   showStats = true,
   showReferencePoints = true,
-  mapOpacity = 0.3,
+  mapOpacity = DEFAULT_MAP_OPACITY,
   showStatsTotal = true,
   showStatsCommercial = true,
   showStatsHelicopters = true,
@@ -79,14 +109,16 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
   minAltitude,
   maxAltitude,
   title = 'ADS-B TRACKER',
-  aircraftIconSize = 16,
-  trailLength = 50,
-  trailOpacity = 0.6,
+  aircraftIconSize = DEFAULT_ICON_SIZE,
+  trailOpacity = DEFAULT_TRAIL_OPACITY,
   showOffScreenIndicators = true,
+  enableSmoothMotion = true,
+  interpolationDuration = INTERPOLATION_DURATION,
   onAircraftUpdate,
   onStatsUpdate,
 }) => {
   const [aircraft, setAircraft] = useState<Aircraft[]>([])
+  const [interpolatedAircraft, setInterpolatedAircraft] = useState<Map<string, InterpolatedAircraft>>(new Map())
   const [aircraftTrails, setAircraftTrails] = useState<Map<string, AircraftTrail>>(new Map())
   const [stats, setStats] = useState<AdsbStats>({
     totalAircraft: 0,
@@ -105,6 +137,44 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
     plane: { [color: string]: HTMLImageElement }
     helicopter: { [color: string]: HTMLImageElement }
   }>({ plane: {}, helicopter: {} })
+
+  // Memoized aircraft filtering and processing
+  const filteredAircraft = useMemo(() => {
+    const aircraftToProcess = enableSmoothMotion ? Array.from(interpolatedAircraft.values()) : aircraft
+    
+    return aircraftToProcess.filter((ac) => {
+      if (!ac.lat || !ac.lon) return false
+      
+      // Category filtering
+      if (ac.category === AIRCRAFT_CATEGORY_GROUPS.HELICOPTERS[0] && !showHelicopters) return false
+      if (ac.category && (AIRCRAFT_CATEGORY_GROUPS.COMMERCIAL as readonly string[]).includes(ac.category) && !showCommercial) return false
+      if (MILITARY_HEX_PREFIXES.some((prefix) => ac.hex.toUpperCase().startsWith(prefix)) && !showMilitary) return false
+      
+      return true
+    })
+  }, [aircraft, interpolatedAircraft, enableSmoothMotion, showHelicopters, showCommercial, showMilitary])
+
+  // Memoized aircraft color calculation
+  const getAircraftColor = useCallback((ac: Aircraft) => {
+    if (ac.emergency && ac.emergency !== 'none') return AIRCRAFT_COLORS.EMERGENCY
+    if (MILITARY_HEX_PREFIXES.some((prefix) => ac.hex.toUpperCase().startsWith(prefix))) return AIRCRAFT_COLORS.MILITARY
+    if (ac.category && (AIRCRAFT_CATEGORY_GROUPS.COMMERCIAL as readonly string[]).includes(ac.category)) return AIRCRAFT_COLORS.COMMERCIAL
+    return AIRCRAFT_COLORS.DEFAULT
+  }, [])
+
+  // Memoized interpolated position calculation
+  const getInterpolatedPosition = useCallback((ac: Aircraft | InterpolatedAircraft) => {
+    let currentLat = ac.lat!
+    let currentLon = ac.lon!
+    
+    if (enableSmoothMotion && isInterpolatedAircraft(ac) && ac.interpolationProgress !== undefined) {
+      const progress = ac.interpolationProgress
+      currentLat = ac.prevLat! + (ac.lat! - ac.prevLat!) * progress
+      currentLon = ac.prevLon! + (ac.lon! - ac.prevLon!) * progress
+    }
+    
+    return { lat: currentLat, lon: currentLon }
+  }, [enableSmoothMotion])
 
   // Function to create colored SVG as image
   const createSvgImage = useCallback(
@@ -147,7 +217,12 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
   // Load SVG icons with different colors
   useEffect(() => {
     const loadIcons = async () => {
-      const colors = ['#74de80', '#ef4444', '#f59e0b', '#06b6d4'] // green, red, amber, cyan
+      const colors = [
+        AIRCRAFT_COLORS.DEFAULT,
+        AIRCRAFT_COLORS.EMERGENCY,
+        AIRCRAFT_COLORS.MILITARY,
+        AIRCRAFT_COLORS.COMMERCIAL,
+      ]
       const planeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="#888888" d="M22 16v-2l-8.5-5V3.5c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5V9L2 14v2l8.5-2.5V19L8 20.5V22l4-1l4 1v-1.5L13.5 19v-5.5z"/></svg>`
       const helicopterSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="#888888" d="M20 5a1 1 0 0 1 0 2h-6v1c4.642 0 8 2.218 8 6a3 3 0 0 1-3 3h-3v1h3a1 1 0 0 1 0 2h-8a1 1 0 0 1 0-2h3v-1h-2c-1.652 0-3-1.348-3-3v-1.001L3 13a1 1 0 0 1-.894-.553l-1-2a1 1 0 0 1 1.788-.894L3.618 11L9 10.999l.005-.175A3 3 0 0 1 12 8V7H5a1 1 0 1 1 0-2zm-3.999 5.174L16 12h3.36c-.665-.906-1.825-1.539-3.359-1.826"/></svg>`
 
@@ -199,6 +274,58 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
       const limitedData = filteredData.slice(0, maxAircraft)
       setAircraft(limitedData)
 
+      // Update interpolated aircraft positions for smooth motion
+      if (enableSmoothMotion) {
+        setInterpolatedAircraft(prevInterpolated => {
+          const newInterpolated = new Map<string, InterpolatedAircraft>()
+          const now = Date.now()
+
+          limitedData.forEach(ac => {
+            if (ac.lat && ac.lon) {
+              const existing = prevInterpolated.get(ac.hex)
+              
+              if (existing) {
+                // Update existing aircraft with interpolation
+                newInterpolated.set(ac.hex, {
+                  ...ac,
+                  prevLat: existing.lat,
+                  prevLon: existing.lon,
+                  interpolationProgress: 0,
+                  interpolationStartTime: now,
+                })
+              } else {
+                // New aircraft - start immediately
+                newInterpolated.set(ac.hex, {
+                  ...ac,
+                  prevLat: ac.lat,
+                  prevLon: ac.lon,
+                  interpolationProgress: 1,
+                  interpolationStartTime: now,
+                })
+              }
+            }
+          })
+
+          // Clean up aircraft that are no longer present
+          limitedData.forEach(ac => {
+            if (ac.hex) {
+              const existing = prevInterpolated.get(ac.hex)
+              if (existing && existing.interpolationProgress !== undefined) {
+                // Keep for a bit to allow fade-out animation
+                if (now - (existing.interpolationStartTime || 0) < 1000) {
+                  newInterpolated.set(ac.hex, {
+                    ...existing,
+                    interpolationProgress: Math.max(0, 1 - (now - (existing.interpolationStartTime || 0)) / 1000),
+                  })
+                }
+              }
+            }
+          })
+
+          return newInterpolated
+        })
+      }
+
       // Update aircraft trails from SDK
       setAircraftTrails(new Map(adsbApi.getAllTrails()))
 
@@ -211,9 +338,9 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
           MILITARY_HEX_PREFIXES.some((prefix) => ac.hex.toUpperCase().startsWith(prefix))
         ).length,
         commercial: limitedData.filter(
-          (ac) => ac.category && ['A3', 'A4', 'A5'].includes(ac.category)
+          (ac) => ac.category && (AIRCRAFT_CATEGORY_GROUPS.COMMERCIAL as readonly string[]).includes(ac.category)
         ).length,
-        helicopters: limitedData.filter((ac) => ac.category === 'A7').length,
+        helicopters: limitedData.filter((ac) => ac.category === AIRCRAFT_CATEGORY_GROUPS.HELICOPTERS[0]).length,
       }
       setStats(newStats)
       setLastUpdate(new Date())
@@ -258,6 +385,55 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
     return () => clearInterval(interval)
   }, [location, maxAircraft, minAltitude, maxAltitude, onAircraftUpdate, onStatsUpdate]) // Include dependencies that affect data fetching
 
+  // Animation loop for smooth interpolation using requestAnimationFrame
+  useEffect(() => {
+    if (!enableSmoothMotion) return
+
+    let animationId: number
+
+    const animate = () => {
+      setInterpolatedAircraft(prevInterpolated => {
+        const now = Date.now()
+        const updated = new Map<string, InterpolatedAircraft>()
+
+        for (const [hex, ac] of prevInterpolated) {
+          if (ac.interpolationStartTime && ac.interpolationProgress !== undefined) {
+            const elapsed = now - ac.interpolationStartTime
+            const progress = Math.min(elapsed / interpolationDuration, 1)
+
+            // Use ease-out easing for smoother motion
+            const easedProgress = 1 - Math.pow(1 - progress, 3)
+
+            updated.set(hex, {
+              ...ac,
+              interpolationProgress: easedProgress,
+            })
+
+            // Remove completed animations
+            if (progress >= 1) {
+              const final = updated.get(hex)!
+              updated.set(hex, {
+                ...final,
+                interpolationProgress: 1,
+                prevLat: final.lat,
+                prevLon: final.lon,
+              })
+            }
+          } else {
+            updated.set(hex, ac)
+          }
+        }
+
+        return updated
+      })
+
+      animationId = requestAnimationFrame(animate)
+    }
+
+    animationId = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(animationId)
+  }, [enableSmoothMotion, interpolationDuration])
+
   // Canvas drawing function
   const drawMap = useCallback(() => {
     const canvas = canvasRef.current
@@ -287,28 +463,15 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
       const y = pixelPos.y * scaleY
 
       // Different colors for each reference point
-      const colors = ['#eab308', '#ef4444', '#06b6d4', '#10b981']
-      const color = colors[index % colors.length]
+      const color = REFERENCE_POINT_COLORS[index % REFERENCE_POINT_COLORS.length]
 
-      console.log(`Reference Point ${point.name}:`, {
-        lat: point.lat,
-        lon: point.lon,
-        expectedPixel: { x: point.x, y: point.y },
-        calculatedPixel: pixelPos,
-        pixelDifference: {
-          x: pixelPos.x - point.x,
-          y: pixelPos.y - point.y,
-        },
-        canvasPos: { x, y },
-        expectedCanvas: { x: point.x * scaleX, y: point.y * scaleY },
-      })
 
       // Draw calculated position (circle)
       ctx.fillStyle = color
       ctx.strokeStyle = color
       ctx.lineWidth = 2
       ctx.beginPath()
-      ctx.arc(x, y, 6, 0, 2 * Math.PI)
+      ctx.arc(x, y, REFERENCE_POINT_SIZE, 0, 2 * Math.PI)
       ctx.fill()
       ctx.stroke()
 
@@ -355,23 +518,7 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
 
       // Get aircraft color for trail
       const currentAircraft = aircraft.find((ac) => ac.hex === trail.hex)
-      let trailColor = '#74de80' // Default green
-      if (currentAircraft) {
-        if (currentAircraft.emergency && currentAircraft.emergency !== 'none') {
-          trailColor = '#ef4444' // Red for emergency
-        } else if (
-          MILITARY_HEX_PREFIXES.some((prefix) =>
-            currentAircraft.hex.toUpperCase().startsWith(prefix)
-          )
-        ) {
-          trailColor = '#f59e0b' // Amber for military
-        } else if (
-          currentAircraft.category &&
-          ['A3', 'A4', 'A5'].includes(currentAircraft.category)
-        ) {
-          trailColor = '#06b6d4' // Cyan for commercial
-        }
-      }
+      const trailColor = currentAircraft ? getAircraftColor(currentAircraft) : AIRCRAFT_COLORS.DEFAULT
 
       // Draw trail lines
       ctx.strokeStyle = trailColor
@@ -398,63 +545,22 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
       ctx.globalAlpha = 1.0
     })
 
-    // Draw aircraft with filtering
-    aircraft
-      .filter((ac) => {
-        // Basic position filter
-        if (!ac.lat || !ac.lon) return false
-        
-        // Category filtering
-        if (ac.category === 'A7' && !showHelicopters) return false
-        if (ac.category && ['A3', 'A4', 'A5'].includes(ac.category) && !showCommercial) return false
-        if (MILITARY_HEX_PREFIXES.some((prefix) => ac.hex.toUpperCase().startsWith(prefix)) && !showMilitary) return false
-        
-        return true
-      })
-      .forEach((ac, index) => {
-        const pixelPos = latLonToPixel(ac.lat!, ac.lon!)
-        const x = pixelPos.x * scaleX
-        const y = pixelPos.y * scaleY
+    // Draw aircraft using memoized filtering
+    filteredAircraft.forEach((ac) => {
+      const { lat: currentLat, lon: currentLon } = getInterpolatedPosition(ac)
+      const pixelPos = latLonToPixel(currentLat, currentLon)
+      const x = pixelPos.x * scaleX
+      const y = pixelPos.y * scaleY
 
-        // Debug logging for first few aircraft
-        if (index < 5) {
-          console.log(`Aircraft ${ac.hex}:`, {
-            lat: ac.lat,
-            lon: ac.lon,
-            calculatedPixel: pixelPos,
-            canvasPos: { x, y },
-            flight: ac.flight,
-            // Check if coordinates are within bounds
-            withinBounds: {
-              lat: ac.lat! >= ADSB_MAP_BOUNDS.south && ac.lat! <= ADSB_MAP_BOUNDS.north,
-              lon: ac.lon! >= ADSB_MAP_BOUNDS.west && ac.lon! <= ADSB_MAP_BOUNDS.east,
-            },
-          })
-        }
 
-        // Skip aircraft that are clearly outside the visible area
-        if (x < -50 || x > canvas.width + 50 || y < -50 || y > canvas.height + 50) {
-          return
-        }
+      // Skip aircraft that are clearly outside the visible area
+      if (x < -CANVAS_MARGIN || x > canvas.width + CANVAS_MARGIN || y < -CANVAS_MARGIN || y > canvas.height + CANVAS_MARGIN) {
+        return
+      }
 
-        // Determine aircraft color and type
-        let color = '#74de80' // Default green
-        let isHelicopter = false
-
-        if (ac.emergency && ac.emergency !== 'none') {
-          color = '#ef4444' // Red for emergency
-        } else if (
-          MILITARY_HEX_PREFIXES.some((prefix) => ac.hex.toUpperCase().startsWith(prefix))
-        ) {
-          color = '#f59e0b' // Amber for military
-        } else if (ac.category && ['A3', 'A4', 'A5'].includes(ac.category)) {
-          color = '#06b6d4' // Cyan for commercial
-        }
-
-        // Check if it's a helicopter
-        if (ac.category === 'A7') {
-          isHelicopter = true
-        }
+      // Get aircraft color and type using memoized function
+      const color = getAircraftColor(ac)
+      const isHelicopter = ac.category === AIRCRAFT_CATEGORY_GROUPS.HELICOPTERS[0]
 
         // Draw aircraft icon with rotation based on heading
         const rotation = ac.true_heading || ac.track || 0
@@ -492,24 +598,18 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
 
     // Draw off-screen aircraft indicators
     if (showOffScreenIndicators) {
-      const offScreenAircraft = aircraft.filter((ac) => {
-        if (!ac.lat || !ac.lon) return false
-        
-        // Apply same filtering as visible aircraft
-        if (ac.category === 'A7' && !showHelicopters) return false
-        if (ac.category && ['A3', 'A4', 'A5'].includes(ac.category) && !showCommercial) return false
-        if (MILITARY_HEX_PREFIXES.some((prefix) => ac.hex.toUpperCase().startsWith(prefix)) && !showMilitary) return false
-        
-        // Check if aircraft is off-screen
-        const pixelPos = latLonToPixel(ac.lat, ac.lon)
+      const offScreenAircraft = filteredAircraft.filter((ac) => {
+        const { lat: currentLat, lon: currentLon } = getInterpolatedPosition(ac)
+        const pixelPos = latLonToPixel(currentLat, currentLon)
         const x = pixelPos.x * scaleX
         const y = pixelPos.y * scaleY
         
-        return x < -50 || x > canvas.width + 50 || y < -50 || y > canvas.height + 50
+        return x < -CANVAS_MARGIN || x > canvas.width + CANVAS_MARGIN || y < -CANVAS_MARGIN || y > canvas.height + CANVAS_MARGIN
       })
 
       offScreenAircraft.forEach((ac) => {
-        const pixelPos = latLonToPixel(ac.lat!, ac.lon!)
+        const { lat: currentLat, lon: currentLon } = getInterpolatedPosition(ac)
+        const pixelPos = latLonToPixel(currentLat, currentLon)
         const x = pixelPos.x * scaleX
         const y = pixelPos.y * scaleY
 
@@ -525,19 +625,19 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
 
         // Create pulsing amber glow effect
         const time = Date.now() / 1000
-        const pulseIntensity = (Math.sin(time * 2) + 1) / 2 // 0 to 1
+        const pulseIntensity = (Math.sin(time * PULSE_CYCLE) + 1) / 2 // 0 to 1
         const alpha = 0.3 + pulseIntensity * 0.4 // 0.3 to 0.7
 
         // Draw glow circle
         ctx.globalAlpha = alpha
-        ctx.fillStyle = '#f59e0b' // Amber color
+        ctx.fillStyle = AIRCRAFT_COLORS.OFF_SCREEN_INDICATOR
         ctx.beginPath()
-        ctx.arc(edgeX, edgeY, 8, 0, 2 * Math.PI)
+        ctx.arc(edgeX, edgeY, ARROW_SIZE, 0, 2 * Math.PI)
         ctx.fill()
 
         // Draw arrow pointing to aircraft
         ctx.globalAlpha = 1.0
-        ctx.fillStyle = '#f59e0b'
+        ctx.fillStyle = AIRCRAFT_COLORS.OFF_SCREEN_INDICATOR
         ctx.save()
         ctx.translate(edgeX, edgeY)
         ctx.rotate(angle)
@@ -555,7 +655,7 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
 
         // Draw aircraft label if space allows
         if (edgeX > 60 && edgeX < canvas.width - 60 && edgeY > 20 && edgeY < canvas.height - 20) {
-          ctx.fillStyle = '#f59e0b'
+          ctx.fillStyle = AIRCRAFT_COLORS.OFF_SCREEN_INDICATOR
           ctx.font = '10px monospace'
           ctx.textAlign = 'center'
           const label = ac.flight?.trim() || ac.hex.toUpperCase()
@@ -569,7 +669,7 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
       const edgeDistance = Math.min(centerX, centerY) - 20 // Same as indicator positioning
       
       ctx.globalAlpha = 0.25
-      ctx.strokeStyle = '#f59e0b'
+      ctx.strokeStyle = AIRCRAFT_COLORS.OFF_SCREEN_INDICATOR
       ctx.lineWidth = 3
       ctx.setLineDash([5, 5]) // Dashed line
       ctx.beginPath()
@@ -578,7 +678,7 @@ const AdsbApp: React.FC<AdsbAppProps> = ({
       ctx.setLineDash([]) // Reset dash
       ctx.globalAlpha = 1.0
     }
-  }, [aircraft, aircraftTrails, iconImages, drawRotatedIcon, showReferencePoints, mapOpacity, trailOpacity, aircraftIconSize, showMilitary, showCommercial, showHelicopters, showOffScreenIndicators])
+  }, [filteredAircraft, aircraftTrails, iconImages, drawRotatedIcon, showReferencePoints, mapOpacity, trailOpacity, aircraftIconSize, showOffScreenIndicators, getAircraftColor, getInterpolatedPosition])
 
   // Load map image and set up canvas
   useEffect(() => {
