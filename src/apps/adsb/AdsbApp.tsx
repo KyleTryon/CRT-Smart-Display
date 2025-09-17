@@ -8,6 +8,7 @@ import {
   ADSB_PHILADELPHIA_REFERENCE_POINTS,
   ADSB_MAP_BOUNDS,
 } from './config'
+import StatsBar from './components/StatsBar'
 
 interface AdsbStats {
   totalAircraft: number
@@ -18,7 +19,73 @@ interface AdsbStats {
   helicopters: number
 }
 
-const AdsbApp: React.FC = () => {
+interface AdsbAppProps {
+  // Location configuration
+  location?: {
+    name: string
+    lat: number
+    lon: number
+    radius: number
+  }
+  
+  // Display configuration
+  maxAircraft?: number
+  refreshInterval?: number
+  showStats?: boolean
+  showReferencePoints?: boolean
+  mapOpacity?: number
+  
+  // Stats configuration
+  showStatsTotal?: boolean
+  showStatsCommercial?: boolean
+  showStatsHelicopters?: boolean
+  showStatsMilitary?: boolean
+  showStatsEmergency?: boolean
+  
+  // Aircraft filtering
+  showMilitary?: boolean
+  showCommercial?: boolean
+  showHelicopters?: boolean
+  minAltitude?: number
+  maxAltitude?: number
+  
+  // UI customization
+  title?: string
+  aircraftIconSize?: number
+  trailLength?: number
+  trailOpacity?: number
+  showOffScreenIndicators?: boolean
+  
+  // Callbacks
+  onAircraftUpdate?: (aircraft: Aircraft[]) => void
+  onStatsUpdate?: (stats: AdsbStats) => void
+}
+
+const AdsbApp: React.FC<AdsbAppProps> = ({
+  location = ADSB_CONFIG.DEFAULT_LOCATION,
+  maxAircraft = ADSB_CONFIG.MAX_AIRCRAFT,
+  refreshInterval = ADSB_CONFIG.REFRESH_INTERVAL,
+  showStats = true,
+  showReferencePoints = true,
+  mapOpacity = 0.3,
+  showStatsTotal = true,
+  showStatsCommercial = true,
+  showStatsHelicopters = true,
+  showStatsMilitary = true,
+  showStatsEmergency = true,
+  showMilitary = true,
+  showCommercial = true,
+  showHelicopters = true,
+  minAltitude,
+  maxAltitude,
+  title = 'ADS-B TRACKER',
+  aircraftIconSize = 16,
+  trailLength = 50,
+  trailOpacity = 0.6,
+  showOffScreenIndicators = true,
+  onAircraftUpdate,
+  onStatsUpdate,
+}) => {
   const [aircraft, setAircraft] = useState<Aircraft[]>([])
   const [aircraftTrails, setAircraftTrails] = useState<Map<string, AircraftTrail>>(new Map())
   const [stats, setStats] = useState<AdsbStats>({
@@ -109,16 +176,27 @@ const AdsbApp: React.FC = () => {
     try {
       setError(null)
       console.log('Fetching aircraft data from:', ADSB_CONFIG.BASE_URL)
-      console.log('Location:', ADSB_CONFIG.DEFAULT_LOCATION)
+      console.log('Location:', location)
 
       const data = await adsbApi.getAircraftByLocation({
-        lat: ADSB_CONFIG.DEFAULT_LOCATION.lat,
-        lon: ADSB_CONFIG.DEFAULT_LOCATION.lon,
-        dist: ADSB_CONFIG.DEFAULT_LOCATION.radius,
+        lat: location.lat,
+        lon: location.lon,
+        dist: location.radius,
       })
 
+      // Apply altitude filtering if specified
+      let filteredData = data
+      if (minAltitude !== undefined || maxAltitude !== undefined) {
+        filteredData = data.filter((ac) => {
+          if (typeof ac.alt_baro !== 'number') return true
+          if (minAltitude !== undefined && ac.alt_baro < minAltitude) return false
+          if (maxAltitude !== undefined && ac.alt_baro > maxAltitude) return false
+          return true
+        })
+      }
+
       // Limit aircraft display
-      const limitedData = data.slice(0, ADSB_CONFIG.MAX_AIRCRAFT)
+      const limitedData = filteredData.slice(0, maxAircraft)
       setAircraft(limitedData)
 
       // Update aircraft trails from SDK
@@ -140,6 +218,10 @@ const AdsbApp: React.FC = () => {
       setStats(newStats)
       setLastUpdate(new Date())
       setLoading(false)
+
+      // Call callbacks if provided
+      onAircraftUpdate?.(limitedData)
+      onStatsUpdate?.(newStats)
     } catch (err) {
       console.error('Failed to fetch aircraft:', err)
 
@@ -169,10 +251,12 @@ const AdsbApp: React.FC = () => {
     fetchAircraft()
 
     // Set up periodic updates
-    const interval = setInterval(fetchAircraft, ADSB_CONFIG.REFRESH_INTERVAL)
+    const interval = setInterval(() => {
+      fetchAircraft()
+    }, refreshInterval)
 
     return () => clearInterval(interval)
-  }, [fetchAircraft])
+  }, [location, maxAircraft, minAltitude, maxAltitude, onAircraftUpdate, onStatsUpdate]) // Include dependencies that affect data fetching
 
   // Canvas drawing function
   const drawMap = useCallback(() => {
@@ -186,8 +270,8 @@ const AdsbApp: React.FC = () => {
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // Draw map background with reduced opacity
-    ctx.globalAlpha = 0.3
+    // Draw map background with configurable opacity
+    ctx.globalAlpha = mapOpacity
     ctx.drawImage(mapImage, 0, 0, canvas.width, canvas.height)
     ctx.globalAlpha = 1.0 // Reset to full opacity for markers
 
@@ -195,8 +279,9 @@ const AdsbApp: React.FC = () => {
     const scaleX = canvas.width / ADSB_MAP_BOUNDS.imageWidth
     const scaleY = canvas.height / ADSB_MAP_BOUNDS.imageHeight
 
-    // Draw ALL reference points for debugging (these should match their known positions)
-    ADSB_PHILADELPHIA_REFERENCE_POINTS.forEach((point, index) => {
+    // Draw visible reference points for debugging (these should match their known positions)
+    if (showReferencePoints) {
+      ADSB_PHILADELPHIA_REFERENCE_POINTS.filter(point => point.visible).forEach((point, index) => {
       const pixelPos = latLonToPixel(point.lat, point.lon)
       const x = pixelPos.x * scaleX
       const y = pixelPos.y * scaleY
@@ -262,6 +347,7 @@ const AdsbApp: React.FC = () => {
         ctx.fillText(`±${distance.toFixed(1)}px`, x, y + 35)
       }
     })
+    }
 
     // Draw aircraft trails first (behind aircraft)
     aircraftTrails.forEach((trail) => {
@@ -290,7 +376,7 @@ const AdsbApp: React.FC = () => {
       // Draw trail lines
       ctx.strokeStyle = trailColor
       ctx.lineWidth = 2
-      ctx.globalAlpha = 0.6
+      ctx.globalAlpha = trailOpacity
       ctx.beginPath()
 
       for (let i = 0; i < trail.positions.length - 1; i++) {
@@ -312,9 +398,19 @@ const AdsbApp: React.FC = () => {
       ctx.globalAlpha = 1.0
     })
 
-    // Draw aircraft
+    // Draw aircraft with filtering
     aircraft
-      .filter((ac) => ac.lat && ac.lon)
+      .filter((ac) => {
+        // Basic position filter
+        if (!ac.lat || !ac.lon) return false
+        
+        // Category filtering
+        if (ac.category === 'A7' && !showHelicopters) return false
+        if (ac.category && ['A3', 'A4', 'A5'].includes(ac.category) && !showCommercial) return false
+        if (MILITARY_HEX_PREFIXES.some((prefix) => ac.hex.toUpperCase().startsWith(prefix)) && !showMilitary) return false
+        
+        return true
+      })
       .forEach((ac, index) => {
         const pixelPos = latLonToPixel(ac.lat!, ac.lon!)
         const x = pixelPos.x * scaleX
@@ -368,7 +464,7 @@ const AdsbApp: React.FC = () => {
         const iconImage = iconImages[iconType]?.[color]
 
         if (iconImage) {
-          drawRotatedIcon(ctx, iconImage, x, y, rotation, 16)
+          drawRotatedIcon(ctx, iconImage, x, y, rotation, aircraftIconSize)
         } else {
           // Fallback to circle if icons not loaded yet
           ctx.fillStyle = color
@@ -393,7 +489,96 @@ const AdsbApp: React.FC = () => {
           ctx.fillText(altText, x, y + 18)
         }
       })
-  }, [aircraft, aircraftTrails, iconImages, drawRotatedIcon])
+
+    // Draw off-screen aircraft indicators
+    if (showOffScreenIndicators) {
+      const offScreenAircraft = aircraft.filter((ac) => {
+        if (!ac.lat || !ac.lon) return false
+        
+        // Apply same filtering as visible aircraft
+        if (ac.category === 'A7' && !showHelicopters) return false
+        if (ac.category && ['A3', 'A4', 'A5'].includes(ac.category) && !showCommercial) return false
+        if (MILITARY_HEX_PREFIXES.some((prefix) => ac.hex.toUpperCase().startsWith(prefix)) && !showMilitary) return false
+        
+        // Check if aircraft is off-screen
+        const pixelPos = latLonToPixel(ac.lat, ac.lon)
+        const x = pixelPos.x * scaleX
+        const y = pixelPos.y * scaleY
+        
+        return x < -50 || x > canvas.width + 50 || y < -50 || y > canvas.height + 50
+      })
+
+      offScreenAircraft.forEach((ac) => {
+        const pixelPos = latLonToPixel(ac.lat!, ac.lon!)
+        const x = pixelPos.x * scaleX
+        const y = pixelPos.y * scaleY
+
+        // Calculate angle from center to aircraft
+        const centerX = canvas.width / 2
+        const centerY = canvas.height / 2
+        const angle = Math.atan2(y - centerY, x - centerX)
+
+        // Calculate position on screen edge
+        const edgeDistance = Math.min(centerX, centerY) - 20 // 20px margin from edge
+        const edgeX = centerX + Math.cos(angle) * edgeDistance
+        const edgeY = centerY + Math.sin(angle) * edgeDistance
+
+        // Create pulsing amber glow effect
+        const time = Date.now() / 1000
+        const pulseIntensity = (Math.sin(time * 2) + 1) / 2 // 0 to 1
+        const alpha = 0.3 + pulseIntensity * 0.4 // 0.3 to 0.7
+
+        // Draw glow circle
+        ctx.globalAlpha = alpha
+        ctx.fillStyle = '#f59e0b' // Amber color
+        ctx.beginPath()
+        ctx.arc(edgeX, edgeY, 8, 0, 2 * Math.PI)
+        ctx.fill()
+
+        // Draw arrow pointing to aircraft
+        ctx.globalAlpha = 1.0
+        ctx.fillStyle = '#f59e0b'
+        ctx.save()
+        ctx.translate(edgeX, edgeY)
+        ctx.rotate(angle)
+        
+        // Draw arrow shape
+        ctx.beginPath()
+        ctx.moveTo(6, 0)
+        ctx.lineTo(-4, -3)
+        ctx.lineTo(-2, 0)
+        ctx.lineTo(-4, 3)
+        ctx.closePath()
+        ctx.fill()
+        
+        ctx.restore()
+
+        // Draw aircraft label if space allows
+        if (edgeX > 60 && edgeX < canvas.width - 60 && edgeY > 20 && edgeY < canvas.height - 20) {
+          ctx.fillStyle = '#f59e0b'
+          ctx.font = '10px monospace'
+          ctx.textAlign = 'center'
+          const label = ac.flight?.trim() || ac.hex.toUpperCase()
+          ctx.fillText(label, edgeX, edgeY + 20)
+        }
+      })
+
+      // Draw the reference circle showing where indicators are positioned
+      const centerX = canvas.width / 2
+      const centerY = canvas.height / 2
+      const edgeDistance = Math.min(centerX, centerY) - 20 // Same as indicator positioning
+      
+      ctx.globalAlpha = 0.25
+      ctx.strokeStyle = '#f59e0b'
+      ctx.lineWidth = 3
+      ctx.setLineDash([5, 5]) // Dashed line
+      ctx.beginPath()
+      ctx.arc(centerX, centerY, edgeDistance, 0, 2 * Math.PI)
+      ctx.stroke()
+      ctx.setLineDash([]) // Reset dash
+      ctx.globalAlpha = 1.0
+    }
+  }, [aircraft, aircraftTrails, iconImages, drawRotatedIcon, showReferencePoints, mapOpacity, trailOpacity, aircraftIconSize, showMilitary, showCommercial, showHelicopters, showOffScreenIndicators])
 
   // Load map image and set up canvas
   useEffect(() => {
@@ -418,7 +603,7 @@ const AdsbApp: React.FC = () => {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-full space-y-8">
-        <h1 className="text-6xl md:text-8xl animate-pulse">ADS-B TRACKER</h1>
+        <h1 className="text-6xl md:text-8xl animate-pulse">{title}</h1>
         <p className="text-3xl md:text-4xl opacity-80">Loading aircraft data...</p>
         <div className="flex space-x-2 mt-8">
           <span className="animate-bounce delay-0">▓</span>
@@ -434,7 +619,7 @@ const AdsbApp: React.FC = () => {
       <div className="flex flex-col items-center justify-center h-full space-y-8">
         <h1 className="text-6xl md:text-8xl text-red-400">ADS-B ERROR</h1>
         <p className="text-2xl md:text-3xl opacity-80 text-center max-w-4xl">{error}</p>
-        <p className="text-xl opacity-60">Retrying in {ADSB_CONFIG.REFRESH_INTERVAL / 1000}s...</p>
+        <p className="text-xl opacity-60">Retrying in {refreshInterval / 1000}s...</p>
       </div>
     )
   }
@@ -454,62 +639,31 @@ const AdsbApp: React.FC = () => {
         {/* Header */}
         <div className="mb-8">
           <div className="flex justify-between items-start mb-6">
-            <h1 className="text-6xl md:text-8xl font-bold">ADS-B TRACKER</h1>
+            <h1 className="text-6xl md:text-8xl font-bold">{title}</h1>
             <div className="text-right text-lg opacity-80">
-              <div className="text-xl font-bold">{ADSB_CONFIG.DEFAULT_LOCATION.name}</div>
-              <div className="text-lg">{ADSB_CONFIG.DEFAULT_LOCATION.radius}nm radius</div>
+              <div className="text-xl font-bold">{location.name}</div>
+              <div className="text-lg">{location.radius}nm radius</div>
               {lastUpdate && (
                 <div className="text-lg">Updated: {lastUpdate.toLocaleTimeString()}</div>
               )}
-            </div>
-          </div>
-
-          {/* Stats Bar */}
-          <div className="grid grid-cols-5 gap-4 text-center text-lg mb-6">
-            <div
-              className="border p-3 bg-black/50"
-              style={{ borderColor: `rgb(var(--crt-primary))` }}
-            >
-              <div className="text-3xl font-bold">{stats.totalAircraft}</div>
-              <div className="opacity-80 text-lg">TOTAL</div>
-            </div>
-            <div
-              className="border p-3 bg-black/50"
-              style={{ borderColor: `rgb(var(--crt-primary))` }}
-            >
-              <div className="text-3xl font-bold">{stats.commercial}</div>
-              <div className="opacity-80 text-lg">COMMERCIAL</div>
-            </div>
-            <div
-              className="border p-3 bg-black/50"
-              style={{ borderColor: `rgb(var(--crt-primary))` }}
-            >
-              <div className="text-3xl font-bold">{stats.helicopters}</div>
-              <div className="opacity-80 text-lg">HELICOPTERS</div>
-            </div>
-            <div
-              className="border p-3 bg-black/50"
-              style={{ borderColor: `rgb(var(--crt-primary))` }}
-            >
-              <div className="text-3xl font-bold">{stats.military}</div>
-              <div className="opacity-80 text-lg">MILITARY</div>
-            </div>
-            <div
-              className="border p-3 bg-black/50"
-              style={{ borderColor: `rgb(var(--crt-primary))` }}
-            >
-              <div
-                className={`text-3xl font-bold ${stats.emergency > 0 ? 'text-red-400 animate-pulse' : ''}`}
-              >
-                {stats.emergency}
-              </div>
-              <div className="opacity-80 text-lg">EMERGENCY</div>
             </div>
           </div>
         </div>
 
         {/* Spacer for map area */}
         <div className="flex-1"></div>
+
+        {/* Stats Bar - moved to bottom */}
+        {showStats && (
+          <StatsBar
+            stats={stats}
+            showTotal={showStatsTotal}
+            showCommercial={showStatsCommercial}
+            showHelicopters={showStatsHelicopters}
+            showMilitary={showStatsMilitary}
+            showEmergency={showStatsEmergency}
+          />
+        )}
       </div>
     </div>
   )

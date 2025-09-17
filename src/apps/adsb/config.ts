@@ -6,6 +6,7 @@ export const ADSB_PHILADELPHIA_REFERENCE_POINTS = [
     lon: -75.1636342534157,
     x: 557,
     y: 441,
+    visible: true, // Only City Hall visible by default
   },
   {
     name: 'west_lehigh_ave',
@@ -13,6 +14,7 @@ export const ADSB_PHILADELPHIA_REFERENCE_POINTS = [
     lon: -75.18745246451326,
     x: 400,
     y: 49,
+    visible: false,
   },
   {
     name: 'wiggins_marina',
@@ -20,6 +22,7 @@ export const ADSB_PHILADELPHIA_REFERENCE_POINTS = [
     lon: -75.13209582939922,
     x: 763.53,
     y: 527.56,
+    visible: false,
   },
   {
     name: 'camden_petty_island_guard_house',
@@ -27,6 +30,47 @@ export const ADSB_PHILADELPHIA_REFERENCE_POINTS = [
     lon: -75.08649891063769,
     x: 1062.53,
     y: 309.56,
+    visible: false,
+  },
+  {
+    name: '30th_street_station',
+    lat: 39.95604952583959,
+    lon: -75.18185780117068,
+    x: 439,
+    y: 413,
+    visible: false,
+  },
+  {
+    name: 'cobbs_creek',
+    lat: 39.93353340824558,
+    lon: -75.24189835798911,
+    x: 42,
+    y: 602,
+    visible: false,
+  },
+  {
+    name: 'bala_train_station',
+    lat: 40.00105056344761,
+    lon: -75.22779169462568,
+    x: 138,
+    y: 27,
+    visible: false,
+  },
+  {
+    name: 'knight_park',
+    lat: 39.91819424158287,
+    lon: -75.08181761497721,
+    x: 1095,
+    y: 731,
+    visible: false,
+  },
+  {
+    name: 'crown_boiler_co',
+    lat: 40.00249064009536,
+    lon: -75.09255878450267,
+    x: 1024,
+    y: 12,
+    visible: false,
   },
 ]
 
@@ -75,9 +119,9 @@ export const ADSB_CONFIG = {
     name: 'Philadelphia',
     lat: ADSB_PHILADELPHIA_REFERENCE_POINTS[0].lat,
     lon: ADSB_PHILADELPHIA_REFERENCE_POINTS[0].lon,
-    radius: 12, // nautical miles
+    radius: 10, // nautical miles
   },
-  REFRESH_INTERVAL: 1500, // 3 seconds
+  REFRESH_INTERVAL: 5000, // 5 seconds - more reasonable for public API
   MAX_AIRCRAFT: 50,
   RATE_LIMIT_DELAY: 1000, // 1 request per second for public endpoints
   FEEDER_RATE_LIMIT: 30000, // 30 seconds for feeder endpoints
@@ -97,12 +141,7 @@ export const ADSB_ENDPOINTS = {
 
 // Map Configuration for ADS-B display
 export const ADSB_MAP_CONFIG = {
-  DEFAULT_ZOOM: 8,
-  MIN_ZOOM: 6,
-  MAX_ZOOM: 12,
-  AIRCRAFT_ICON_SIZE: 16,
-  TRAIL_LENGTH: 50, // Number of position points to keep for aircraft trails
-  MAX_DISTANCE_NM: 250, // Maximum distance for location queries
+  TRAIL_LENGTH: 24, // Number of position points to keep for aircraft trails (reduced from 50)
 } as const
 
 // Military aircraft hex code prefixes (basic detection)
@@ -141,53 +180,23 @@ export function latLonToPixel(lat: number, lon: number): { x: number; y: number 
   const minLon = Math.min(...lons)
   const maxLon = Math.max(...lons)
 
-  // Use inverse distance weighting for more accurate interpolation
-  let totalWeight = 0
-  let weightedX = 0
-  let weightedY = 0
+  // Use simple linear interpolation based on the reference points
+  // This was the working algorithm before
+  const latNorm = (lat - minLat) / (maxLat - minLat)
+  const lonNorm = (lon - minLon) / (maxLon - minLon)
 
-  for (const point of points) {
-    // Calculate distance from input coordinate to reference point
-    const latDiff = lat - point.lat
-    const lonDiff = lon - point.lon
-    const distance = Math.sqrt(latDiff * latDiff + lonDiff * lonDiff)
+  // Get pixel bounds from reference points
+  const xs = points.map((p) => p.x)
+  const ys = points.map((p) => p.y)
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
 
-    // Avoid division by zero for exact matches
-    if (distance < 0.0001) {
-      return { x: point.x, y: point.y }
-    }
+  const x = minX + lonNorm * (maxX - minX)
+  const y = minY + (1 - latNorm) * (maxY - minY) // Flip Y axis
 
-    // Use inverse distance as weight (closer points have more influence)
-    const weight = 1 / (distance * distance)
-    totalWeight += weight
-    weightedX += point.x * weight
-    weightedY += point.y * weight
-  }
-
-  // If we're outside the reference area, fall back to linear interpolation
-  if (totalWeight === 0 || lat < minLat || lat > maxLat || lon < minLon || lon > maxLon) {
-    // Find the closest two points for each axis and interpolate
-    const latNorm = (lat - minLat) / (maxLat - minLat)
-    const lonNorm = (lon - minLon) / (maxLon - minLon)
-
-    // Get pixel bounds from reference points
-    const xs = points.map((p) => p.x)
-    const ys = points.map((p) => p.y)
-    const minX = Math.min(...xs)
-    const maxX = Math.max(...xs)
-    const minY = Math.min(...ys)
-    const maxY = Math.max(...ys)
-
-    const x = minX + lonNorm * (maxX - minX)
-    const y = minY + (1 - latNorm) * (maxY - minY) // Flip Y axis
-
-    return { x, y }
-  }
-
-  return {
-    x: weightedX / totalWeight,
-    y: weightedY / totalWeight,
-  }
+  return { x, y }
 }
 
 /**
