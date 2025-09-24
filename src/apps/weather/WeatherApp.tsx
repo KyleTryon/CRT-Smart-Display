@@ -185,26 +185,28 @@ const WeatherApp: React.FC = () => {
         aqiColor: aqiCategory.color,
       })
 
-      // Find the current hour in the hourly data
+      // Find the current hour in the hourly data based on actual timestamps
       const currentTime = new Date()
-      const currentHour = currentTime.getHours()
+      
+      console.log(`Current time: ${currentTime.toISOString()}, Total hourly data: ${hourlyData.length}`)
 
-      console.log(`Current hour: ${currentHour}, Total hourly data: ${hourlyData.length}`)
-
-      // Find the index of the current hour (or closest)
+      // Find the closest current hour in the data (the first entry should be current or very recent)
       let currentHourIndex = 0
-      for (let i = 0; i < hourlyData.length; i++) {
-        if (hourlyData[i].time.getHours() === currentHour) {
+      let minTimeDiff = Math.abs(hourlyData[0].time.getTime() - currentTime.getTime())
+      
+      for (let i = 1; i < Math.min(3, hourlyData.length); i++) {
+        const timeDiff = Math.abs(hourlyData[i].time.getTime() - currentTime.getTime())
+        if (timeDiff < minTimeDiff) {
+          minTimeDiff = timeDiff
           currentHourIndex = i
-          break
         }
       }
 
-      console.log(`Current hour index: ${currentHourIndex}`)
+      console.log(`Current hour index: ${currentHourIndex}, time: ${hourlyData[currentHourIndex].time.toISOString()}`)
 
-      // Get current weather and 5 hours from now
+      // Get current weather and exactly 5 hours from now
       const futureHourIndex = Math.min(currentHourIndex + 5, hourlyData.length - 1)
-      console.log(`Future hour index: ${futureHourIndex}`)
+      console.log(`Future hour index: ${futureHourIndex}, time: ${hourlyData[futureHourIndex].time.toISOString()}`)
 
       const todaysForecast = [
         hourlyData[currentHourIndex], // Current hour
@@ -212,6 +214,8 @@ const WeatherApp: React.FC = () => {
       ].filter(Boolean) // Remove any undefined entries
 
       console.log(`Forecast items: ${todaysForecast.length}`)
+      console.log(`NOW: ${todaysForecast[0]?.time.toLocaleString()}`)
+      console.log(`+5 HOURS: ${todaysForecast[1]?.time.toLocaleString()}`)
 
       setHourlyForecast(todaysForecast)
       setLastUpdate(new Date())
@@ -340,10 +344,13 @@ const WeatherApp: React.FC = () => {
               className="border p-4 bg-black/50 text-center"
               style={{ borderColor: `rgb(var(--crt-primary))` }}
             >
-              <div className="text-lg font-bold mb-2">{index === 0 ? 'NOW' : '+5 HOURS'}</div>
+              <div className="text-lg font-bold mb-2">
+                {index === 0 ? 'NOW' : `+${Math.round((hour.time.getTime() - hourlyForecast[0].time.getTime()) / (1000 * 60 * 60))} HOURS`}
+              </div>
               <div className="text-sm opacity-60 mb-2">
                 {hour.time.toLocaleTimeString('en-US', {
                   hour: 'numeric',
+                  minute: '2-digit',
                   hour12: true,
                 })}
               </div>

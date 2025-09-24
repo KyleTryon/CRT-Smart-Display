@@ -144,7 +144,7 @@ export const EMERGENCY_CODES = {
 
 // ADS-B specific configuration
 export const ADSB_CONFIG = {
-  BASE_URL: import.meta.env.DEV ? '/api/adsb' : 'https://opendata.adsb.fi/api/v2',
+  BASE_URL: '/api/adsb', // Use proxy for CORS and rate limiting
   DEFAULT_LOCATION: {
     name: 'Philadelphia',
     lat: ADSB_PHILADELPHIA_REFERENCE_POINTS[0].lat,

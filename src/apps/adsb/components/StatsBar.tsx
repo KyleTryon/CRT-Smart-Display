@@ -86,7 +86,7 @@ const StatsBar: React.FC<StatsBarProps> = ({
 
   return (
     <div className={finalClassName}>
-      {statsItems.map((item, index) => (
+      {statsItems.map((item) => (
         <div
           key={item.label}
           className={itemClassName}

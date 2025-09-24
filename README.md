@@ -27,6 +27,8 @@ A retro-inspired digital display application that cycles through different full-
 
 ## Installation
 
+### Local Development
+
 ```bash
 # Install dependencies
 pnpm install
@@ -40,6 +42,69 @@ pnpm run build
 # Preview production build
 pnpm run preview
 ```
+
+### Docker Deployment
+
+The application includes a complete Docker setup for easy deployment:
+
+#### Quick Start with Docker Compose
+
+```bash
+# Build and run the application
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the application
+docker-compose down
+```
+
+The application will be available at `http://localhost:3000`
+
+#### Manual Docker Build
+
+```bash
+# Build the Docker image
+docker build -t crt-smart-display .
+
+# Run the container
+docker run -d -p 3000:80 --name crt-smart-display crt-smart-display
+
+# View logs
+docker logs -f crt-smart-display
+
+# Stop and remove container
+docker stop crt-smart-display
+docker rm crt-smart-display
+```
+
+#### Docker Features
+
+- **Multi-stage build**: Optimized for production with minimal image size
+- **Nginx server**: Serves the built application with proper caching and compression
+- **Health checks**: Built-in health monitoring
+- **API proxying**: Handles CORS and proxies external API calls (ADS-B data)
+- **Security headers**: Includes security best practices
+- **SPA routing**: Proper client-side routing support
+#### API Configuration
+
+The application uses a proxy setup for external API calls (no API keys required):
+
+**Development (Vite dev server):**
+- ADS-B API calls go to `/api/adsb/*` and are proxied to `https://opendata.adsb.fi/api/v2/*`
+- Weather API calls go directly to Open-Meteo (handled by the `openmeteo` package)
+
+**Production (Docker/Nginx):**
+- ADS-B API calls go to `/api/adsb/*` and are proxied by nginx to `https://opendata.adsb.fi/api/v2/*`
+- Weather API calls go directly to Open-Meteo (no proxy needed)
+
+This setup provides:
+- CORS handling for browser-based requests
+- Rate limiting protection
+- Consistent API endpoints across environments
+- User-Agent header management
+- No API keys or environment variables needed
 
 ## Adding New Display Modules
 

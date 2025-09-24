@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  crt-smart-display:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crt-smart-display
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.crt-smart-display.rule=Host(`localhost`)"
+      - "traefik.http.services.crt-smart-display.loadbalancer.server.port=80"
+
+  # Optional: Add a reverse proxy for production use
+  # nginx-proxy:
+  #   image: nginx:alpine
+  #   container_name: crt-smart-display-proxy
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx-proxy.conf:/etc/nginx/conf.d/default.conf:ro
+  #     - /etc/ssl/certs:/etc/ssl/certs:ro
+  #   depends_on:
+  #     - crt-smart-display
+  #   restart: unless-stopped
+
+networks:
+  default:
+    name: crt-smart-display-network

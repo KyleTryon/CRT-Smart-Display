@@ -1,8 +1,9 @@
 {
   "display": {
-    "appCycleTime": 10000,
+    "appCycleTime": 60000,
     "clockUpdateInterval": 1000,
     "staticApp": "weather",
-    "enableCycling": false
+    "enableCycling": true,
+    "skipWelcomeInCycling": true
   }
 }
